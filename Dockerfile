@@ -1,10 +1,14 @@
 # syntax=docker/dockerfile:1
 
+# uv for the build host. A plain `COPY --from=<image>` would take the target platform's
+# binary, which the build host cannot run without emulation.
+FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b AS uv
+
 # Runs on the build host for every target platform: uv downloads the target's wheels
 # directly, so multi-arch builds need no emulation. Keep the Python minor version in
 # sync with the runtime image.
 FROM --platform=$BUILDPLATFORM python:3.13-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS build
-COPY --from=ghcr.io/astral-sh/uv:0.11@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7 /uv /usr/local/bin/uv
+COPY --from=uv /uv /usr/local/bin/uv
 
 ARG TARGETARCH
 WORKDIR /src
