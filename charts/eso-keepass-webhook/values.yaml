@@ -1,0 +1,95 @@
+image:
+  # -- Webhook image
+  repository: ghcr.io/steadforce/eso-keepass-webhook
+  # -- Image tag
+  # @default -- the chart's `appVersion`
+  tag: ""
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- Secrets for pulling the image from a private registry
+imagePullSecrets: []
+
+# -- Number of webhook pods
+replicaCount: 1
+
+# -- Annotations for every resource, e.g. `argocd.argoproj.io/sync-wave: "100"` to apply the
+# chart after ESO is running
+commonAnnotations: {}
+# -- Labels for every resource
+commonLabels: {}
+
+database:
+  # For example:
+  #   kubectl create secret generic keepass-database \
+  #     --from-file=database.kdbx=./secrets.kdbx --from-file=password=./password.txt
+  # -- Existing Secret with the `.kdbx` file
+  secretName: keepass-database
+  # -- Key of the database in that Secret
+  databaseKey: database.kdbx
+  # -- Seconds between checks for a changed database, password or key file
+  reloadInterval: 10
+
+credentials:
+  # -- Existing Secret with the master password and/or key file
+  # @default -- `database.secretName`
+  secretName: ""
+  # -- Key of the master password; empty when the database only uses a key file
+  passwordKey: password
+  # -- Key of a key file
+  keyfileKey: ""
+
+auth:
+  # -- Existing Secret with the auth token: a `token` key and the label
+  # `external-secrets.io/type: webhook`
+  # @default -- generated once by ESO
+  existingSecret: ""
+
+clusterSecretStore:
+  # -- Create a `ClusterSecretStore`. Only rendered when the cluster serves ESO's API.
+  enabled: true
+  # -- Name of the `ClusterSecretStore`
+  name: keepass
+  # For example:
+  #   - namespaces: [team-a]
+  #   - namespaceSelector:
+  #       matchLabels: { keepass.example.com/allowed: "true" }
+  # -- Namespaces that may use the store (ESO's `spec.conditions`). By default every namespace
+  # can, and with it read every entry of the database.
+  conditions: []
+
+service:
+  # -- Service port
+  port: 8080
+
+networkPolicy:
+  # -- Only let ESO's controller reach the webhook, and block all outgoing traffic (the webhook
+  # needs none)
+  enabled: true
+  # -- Who may reach the webhook (the NetworkPolicy's `from`): ESO's controller in the
+  # `external-secrets` namespace. Change it if ESO runs elsewhere or with other labels.
+  from:
+  - namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: external-secrets
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: external-secrets
+
+# -- Resources. The KDF's memory cost (64 MiB by default in KeePassXC) is allocated on every
+# (re)load: raise the limit for databases with a higher setting.
+resources:
+  requests:
+    cpu: 10m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+# -- Pod annotations
+podAnnotations: {}
+# -- Node selector
+nodeSelector: {}
+# -- Tolerations
+tolerations: []
+# -- Affinity
+affinity: {}

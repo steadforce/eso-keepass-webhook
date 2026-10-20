@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eso-keepass-webhook.fullname" . }}
+  labels:
+    {{- include "eso-keepass-webhook.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "eso-keepass-webhook.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "eso-keepass-webhook.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: eso-keepass-webhook
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: KDBX_PATH
+          value: /var/run/keepass/database/{{ .Values.database.databaseKey }}
+        - name: KDBX_RELOAD_INTERVAL
+          value: {{ .Values.database.reloadInterval | quote }}
+        {{- with .Values.credentials.passwordKey }}
+        - name: KDBX_PASSWORD_FILE
+          value: /var/run/keepass/credentials/{{ . }}
+        {{- end }}
+        {{- with .Values.credentials.keyfileKey }}
+        - name: KDBX_KEYFILE
+          value: /var/run/keepass/credentials/{{ . }}
+        {{- end }}
+        - name: AUTH_TOKEN_FILE
+          value: /var/run/auth/token
+        - name: PORT
+          value: {{ .Values.service.port | quote }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        # Whole-Secret mounts (no subPath) so updates reach the pod and trigger a reload.
+        - name: database
+          mountPath: /var/run/keepass/database
+          readOnly: true
+        - name: credentials
+          mountPath: /var/run/keepass/credentials
+          readOnly: true
+        - name: auth
+          mountPath: /var/run/auth
+          readOnly: true
+      volumes:
+      - name: database
+        secret:
+          secretName: {{ include "eso-keepass-webhook.databaseSecret" . }}
+      - name: credentials
+        secret:
+          secretName: {{ include "eso-keepass-webhook.credentialsSecret" . }}
+      - name: auth
+        secret:
+          secretName: {{ include "eso-keepass-webhook.authSecret" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

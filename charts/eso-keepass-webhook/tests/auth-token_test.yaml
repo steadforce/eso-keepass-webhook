@@ -1,0 +1,59 @@
+suite: auth token
+templates:
+- templates/auth-token.yaml
+release:
+  name: eso-keepass-webhook
+  namespace: keepass
+tests:
+- it: has ESO generate the token once
+  capabilities:
+    apiVersions:
+    - external-secrets.io/v1/ExternalSecret
+    - generators.external-secrets.io/v1alpha1/Password
+  asserts:
+  - hasDocuments:
+      count: 2
+  - isKind:
+      of: Password
+    documentIndex: 0
+  - isKind:
+      of: ExternalSecret
+    documentIndex: 1
+  - equal:
+      path: spec.refreshPolicy
+      value: CreatedOnce
+    documentIndex: 1
+  - equal:
+      path: spec.target
+      value:
+        name: eso-keepass-webhook-auth
+        template:
+          metadata:
+            labels:
+              external-secrets.io/type: webhook
+          data:
+            token: "{{ .password }}"
+    documentIndex: 1
+
+- it: is omitted while the cluster does not serve ESO's APIs
+  asserts:
+  - hasDocuments:
+      count: 0
+
+- it: is omitted without the generator API
+  capabilities:
+    apiVersions: [external-secrets.io/v1/ExternalSecret]
+  asserts:
+  - hasDocuments:
+      count: 0
+
+- it: is omitted with an existing auth Secret
+  capabilities:
+    apiVersions:
+    - external-secrets.io/v1/ExternalSecret
+    - generators.external-secrets.io/v1alpha1/Password
+  set:
+    auth.existingSecret: my-token
+  asserts:
+  - hasDocuments:
+      count: 0

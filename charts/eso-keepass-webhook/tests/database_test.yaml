@@ -1,0 +1,64 @@
+suite: database and credentials
+templates:
+- templates/deployment.yaml
+release:
+  name: eso-keepass-webhook
+  namespace: keepass
+tests:
+- it: mounts one Secret with database and password by default
+  asserts:
+  - contains:
+      path: spec.template.spec.volumes
+      content: {name: database, secret: {secretName: keepass-database}}
+  - contains:
+      path: spec.template.spec.volumes
+      content: {name: credentials, secret: {secretName: keepass-database}}
+  - contains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_PATH, value: /var/run/keepass/database/database.kdbx}
+  - contains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_PASSWORD_FILE, value: /var/run/keepass/credentials/password}
+  - notContains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_KEYFILE}
+      any: true
+
+- it: passes the reload interval
+  set:
+    database.reloadInterval: 30
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_RELOAD_INTERVAL, value: "30"}
+- it: takes the credentials from their own Secret
+  set:
+    credentials.secretName: keepass-credentials
+    credentials.keyfileKey: keyfile
+  asserts:
+  - contains:
+      path: spec.template.spec.volumes
+      content: {name: database, secret: {secretName: keepass-database}}
+  - contains:
+      path: spec.template.spec.volumes
+      content: {name: credentials, secret: {secretName: keepass-credentials}}
+  - contains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_KEYFILE, value: /var/run/keepass/credentials/keyfile}
+
+- it: supports a database that only uses a key file
+  set:
+    credentials.passwordKey: ""
+    credentials.keyfileKey: keyfile
+  asserts:
+  - notContains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_PASSWORD_FILE}
+      any: true
+
+- it: requires the database Secret
+  set:
+    database.secretName: ""
+  asserts:
+  - failedTemplate:
+      errorPattern: database.secretName is required

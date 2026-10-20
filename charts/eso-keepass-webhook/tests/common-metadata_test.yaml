@@ -1,0 +1,26 @@
+suite: common metadata
+templates:
+- templates/auth-token.yaml
+- templates/clustersecretstore.yaml
+- templates/deployment.yaml
+- templates/networkpolicy.yaml
+- templates/service.yaml
+capabilities:
+  apiVersions:
+  - external-secrets.io/v1/ClusterSecretStore
+  - external-secrets.io/v1/ExternalSecret
+  - generators.external-secrets.io/v1alpha1/Password
+set:
+  commonAnnotations:
+    argocd.argoproj.io/sync-wave: "100"
+  commonLabels:
+    team: platform
+tests:
+- it: adds commonAnnotations and commonLabels to every resource
+  asserts:
+  - equal:
+      path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+      value: "100"
+  - equal:
+      path: metadata.labels.team
+      value: platform

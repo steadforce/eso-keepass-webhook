@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "eso-keepass-webhook.fullname" . }}
+  labels:
+    {{- include "eso-keepass-webhook.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "eso-keepass-webhook.selectorLabels" . | nindent 6 }}
+  # No egress rules: the webhook only reads its mounted files.
+  policyTypes: [Ingress, Egress]
+  ingress:
+  - from:
+    {{- toYaml .Values.networkPolicy.from | nindent 4 }}
+    ports:
+    - port: http
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,45 @@
+[project]
+name = "eso-keepass-webhook"
+version = "0.1.0"
+description = "Serve KeePass entries to the External Secrets Operator webhook provider"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pykeepass>=4.1",
+    "starlette>=1.0",
+    "uvicorn>=0.35",
+]
+
+[project.scripts]
+eso-keepass-webhook = "eso_keepass_webhook.__main__:main"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "mypy>=1.17",
+    "pytest>=8.4",
+    "ruff>=0.12",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S"]
+per-file-ignores = { "tests/*" = ["S101", "S105", "S106"] }
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["pykeepass.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

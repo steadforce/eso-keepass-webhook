@@ -1,0 +1,61 @@
+suite: NetworkPolicy
+templates:
+- templates/networkpolicy.yaml
+release:
+  name: eso-keepass-webhook
+  namespace: keepass
+tests:
+- it: lets only ESO's controller in, and nothing out
+  asserts:
+  - isKind:
+      of: NetworkPolicy
+  - equal:
+      path: spec.podSelector.matchLabels
+      value:
+        app.kubernetes.io/name: eso-keepass-webhook
+        app.kubernetes.io/instance: eso-keepass-webhook
+  - equal:
+      path: spec.policyTypes
+      value: [Ingress, Egress]
+  - equal:
+      path: spec.ingress
+      value:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: external-secrets
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: external-secrets
+        ports:
+        - port: http
+          protocol: TCP
+  - notExists:
+      path: spec.egress
+
+- it: replaces the default sources entirely
+  set:
+    networkPolicy.from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: platform
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: eso
+  asserts:
+  - equal:
+      path: spec.ingress[0].from
+      value:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: platform
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/instance: eso
+
+- it: can be disabled
+  set:
+    networkPolicy.enabled: false
+  asserts:
+  - hasDocuments:
+      count: 0

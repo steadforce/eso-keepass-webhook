@@ -1,0 +1,49 @@
+{{- if .Capabilities.APIVersions.Has "external-secrets.io/v1/ExternalSecret" }}
+{{- if .Capabilities.APIVersions.Has "generators.external-secrets.io/v1alpha1/Password" }}
+{{- if not .Values.auth.existingSecret }}
+{{- $name := include "eso-keepass-webhook.authSecret" . }}
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eso-keepass-webhook.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  length: 48
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eso-keepass-webhook.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  refreshPolicy: CreatedOnce
+  target:
+    name: {{ $name }}
+    template:
+      metadata:
+        labels:
+          external-secrets.io/type: webhook
+      data:
+        token: "{{`{{ .password }}`}}"
+  dataFrom:
+  - sourceRef:
+      generatorRef:
+        apiVersion: generators.external-secrets.io/v1alpha1
+        kind: Password
+        name: {{ $name }}
+{{- end }}
+{{- end }}
+{{- end }}

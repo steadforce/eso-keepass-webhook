@@ -1,0 +1,21 @@
+apiVersion: v2
+name: eso-keepass-webhook
+description: Serve KeePass entries to the External Secrets Operator webhook provider
+type: application
+home: https://github.com/steadforce/eso-keepass-webhook
+sources:
+- https://github.com/steadforce/eso-keepass-webhook
+keywords:
+- external-secrets
+- keepass
+- kdbx
+- secrets
+- webhook
+maintainers:
+- name: Steadforce
+  url: https://www.steadforce.com
+annotations:
+  artifacthub.io/license: Apache-2.0
+# Set from the git tag on release.
+version: 0.1.0
+appVersion: 0.1.0

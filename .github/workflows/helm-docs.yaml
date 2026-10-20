@@ -1,0 +1,24 @@
+name: Helm Docs
+
+on:
+  pull_request:
+    paths:
+      - charts/eso-keepass-webhook/**
+      - .github/workflows/helm-docs.yaml
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        if: ${{ !env.ACT }}
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: losisin/helm-docs-github-action@v2.0.1
+        with:
+          git-push: true
+          # Pull requests from forks cannot be pushed to (nor can act runs): only check there.
+          fail-on-diff: ${{ github.event.pull_request.head.repo.full_name != github.repository || env.ACT == 'true' }}
