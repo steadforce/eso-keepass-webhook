@@ -25,7 +25,7 @@ RUN case "$TARGETARCH" in \
 COPY src/eso_keepass_webhook /app/eso_keepass_webhook
 RUN python -m compileall -q --invalidation-mode unchecked-hash /app
 
-FROM gcr.io/distroless/python3-debian13:nonroot@sha256:83aa8d4f74a4d7f7cf2d472054139bef71a927b76c680c0f2e1021d6b1d6d732
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:c3ed2b61f3c4e410685565ceb3c818197b552832521b39d53eca5d2d9d0dc1e1
 COPY --from=build /app /app
 ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
 EXPOSE 8080
