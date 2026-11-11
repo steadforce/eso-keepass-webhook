@@ -1,0 +1,140 @@
+name: Nightly patch release
+
+# Creates a patch release (vX.Y.Z -> vX.Y.Z+1) when a DEPENDENCY changed since the newest stable release tag.
+# Only the files in DEPENDENCY_FILES count: changes of src/, tests/, charts/, .github/ and the README never trigger a release.
+# Minor and major releases stay manual: push a tag vX.Y.Z by hand, the next nightly run continues from it.
+# Without a stable tag (only prereleases such as v0.1.0-rc.1) nothing is released: the first stable release is manual.
+#
+# The plan is made here, the release itself is built by ci.yaml, called with the version and the commit: image (scanned, signed,
+# SBOM), chart, then tag and GitHub release with generated notes. The tag and release are created last, so a failed build
+# leaves no release behind and the next night tries again. Everything runs with the default GITHUB_TOKEN: calling the
+# workflow replaces the tag-push trigger, which a tag created with GITHUB_TOKEN would not fire.
+
+on:
+  schedule:
+    # 02:17 UTC = 03:17 (winter) / 04:17 (summer) in Berlin; an odd minute avoids the busy full hour
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report what would be released, build and publish nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-patch-release
+  cancel-in-progress: false
+
+env:
+  DEPENDENCY_FILES: "uv.lock .python-version Dockerfile"
+
+jobs:
+  plan:
+    name: Plan the release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      last: ${{ steps.plan.outputs.last }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether a release is due
+        id: plan
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Releases are only created from main, this run is on $GITHUB_REF" >&2
+            exit 1
+          fi
+          # Newest stable tag, prereleases such as v0.1.0-rc.1 are ignored
+          last=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          sha=$(git rev-parse HEAD)
+          {
+            echo "### Nightly patch release"
+            echo "- Commit: \`$sha\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$last" ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "- No stable release tag (vX.Y.Z) yet: **no release**. Push the first one by hand." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # A re-run of an older run checks out its old commit but sees newer tags: never plan from a commit behind the newest release
+          if ! git merge-base --is-ancestor "refs/tags/${last}" HEAD; then
+            echo "Newest release ${last} is not an ancestor of this commit, start a new run on the current main" >&2
+            exit 1
+          fi
+          # shellcheck disable=SC2086 # DEPENDENCY_FILES is a list of file names
+          changed=$(git diff --name-only "refs/tags/${last}..HEAD" -- $DEPENDENCY_FILES)
+          {
+            echo "last=$last"
+            echo "sha=$sha"
+          } >> "$GITHUB_OUTPUT"
+          echo "- Newest release: \`$last\`" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$changed" ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "- No dependency file changed since \`$last\`: **no release**" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<< "${last#v}"
+          version="${major}.${minor}.$((patch + 1))"
+          {
+            echo "release=true"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "- Changed dependency files:"
+            # shellcheck disable=SC2001,SC2016 # backticks are meant literally (Markdown)
+            echo "$changed" | sed 's/^/  - `/; s/$/`/'
+            echo "- New release: **\`v$version\`**"
+            if [[ "$DRY_RUN" == "true" ]]; then echo "- Dry run: nothing is built or published"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Build and release
+    needs: plan
+    if: ${{ needs.plan.outputs.release == 'true' && !inputs.dry_run }}
+    # The permissions of the jobs in ci.yaml cannot exceed these.
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/ci.yaml
+    # ci.yaml posts the result of the release to the Teams release channel and needs the secret for that.
+    secrets: inherit
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      ref: ${{ needs.plan.outputs.sha }}
+      previous_tag: ${{ needs.plan.outputs.last }}
+
+  # A failed plan never reaches ci.yaml, which reports its own results. The steps skip themselves while the secret is empty.
+  notify-plan-failure:
+    name: Notify Teams
+    needs: plan
+    if: ${{ always() && !inputs.dry_run && needs.plan.result == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      MS_TEAMS_RELEASE_WEBHOOK: ${{ secrets.STEADOPS_RELEASE_MS_TEAMS_WEBHOOK }}
+    steps:
+      - name: Notify MS Teams about the failed plan
+        if: ${{ env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
+        continue-on-error: true
+        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.3.0
+        with:
+          webhook-url: ${{ env.MS_TEAMS_RELEASE_WEBHOOK }}
+          status: failure
+          title: "eso-keepass-webhook release (planning) failed"
+          facts: |
+            Run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
