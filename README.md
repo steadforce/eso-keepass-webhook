@@ -134,9 +134,66 @@ curl -H 'Authorization: Bearer dev' 'localhost:8080/v1/secret?path=Group/Entry&p
 docker buildx build --platform linux/amd64,linux/arm64 -t eso-keepass-webhook .
 ```
 
-Releases: push a tag `vX.Y.Z`. CI publishes the image `ghcr.io/steadforce/eso-keepass-webhook:X.Y.Z` and
-the chart `oci://ghcr.io/steadforce/charts/eso-keepass-webhook`, and creates a GitHub Release with
-generated notes.
+## Releases
+
+Tags are semantic versions with a `v` prefix (`v1.2.3`). Every release publishes the image
+`ghcr.io/steadforce/eso-keepass-webhook:1.2.3` (also `1.2`), the chart
+`oci://ghcr.io/steadforce/charts/eso-keepass-webhook` and a GitHub release with generated notes, a signed
+SBOM and a card in the Teams release channel (secret `STEADOPS_RELEASE_MS_TEAMS_WEBHOOK`). The notes list the merged
+pull requests grouped by label as configured in [`.github/release.yaml`](.github/release.yaml): Renovate pull
+requests carry the label `dependencies`. Label a pull request `skip-changelog` to leave it out.
+
+- **Manual release (minor, major, first stable release):** push a tag `vX.Y.Z` on `main`. Tags with a hyphen
+  (`v1.0.0-rc.1`) are published as prereleases.
+- **Nightly patch release:** [`nightly-patch-release.yaml`](.github/workflows/nightly-patch-release.yaml) runs every
+  night (02:17 UTC) and can be started by hand (`dry_run` is on by default and only reports in the run summary what it
+  would do). If `uv.lock`, `.python-version` or the `Dockerfile` changed since the newest stable tag, it releases the next patch
+  version from the head of `main`. Changes of `src/`, `tests/`, `charts/` and `.github/` do not trigger a release, but a
+  dependency release contains them if they were merged since the last release. It does nothing as long as there is no
+  stable tag (prereleases are ignored).
+
+Renovate merges patch and digest updates of the Python dependencies and the `Dockerfile`, and all GitHub Actions updates,
+three days after their release once the checks pass. Minor and major updates of dependencies stay manual.
+
+### Image scanning and signing
+
+Every image that is pushed (releases and `main`) is scanned and signed; pull request images are not pushed.
+
+- **Trivy scan before the push:** the image is built once, scanned (operating system packages and Python libraries) and only
+  pushed when the scan passes. The build fails on `HIGH` and `CRITICAL` vulnerabilities that already have a fixed version.
+  Pull requests are only reported, so the update that fixes a finding can still be merged. A finding that has to be accepted
+  goes into `.trivyignore` with a comment and an expiry date (`CVE-... exp:2026-12-31`). The scan covers the `linux/amd64`
+  image; the `linux/arm64` image differs only in the architecture-specific wheels, which are pinned by hash to the same versions.
+- **Cosign keyless signature:** after the push the digest of the multi-arch image is signed with the identity of the workflow
+  (GitHub OIDC, recorded in the public Rekor log) and verified in the same run. There is no key or secret to manage.
+- **Pinned scan tools:** `trivy-action` and `cosign-installer` are pinned to commit SHAs (most `trivy-action` tags were rewritten
+  to malicious commits in March 2026). The Trivy version is set once in `SCANNER_TRIVY_VERSION` in `ci.yaml`; Renovate updates it
+  three days after release.
+
+Verify an image before using it:
+
+```bash
+cosign verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/steadforce/eso-keepass-webhook/\.github/workflows/ci\.yaml@' \
+  ghcr.io/steadforce/eso-keepass-webhook:X.Y.Z
+```
+
+### SBOM
+
+Every pushed image gets a CycloneDX SBOM (JSON) of its operating system packages and Python libraries.
+
+- **Signed attestation on the image:** attached to the image digest with `cosign attest` (same identity as the signature):
+
+  ```bash
+  cosign verify-attestation --type cyclonedx \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity-regexp '^https://github\.com/steadforce/eso-keepass-webhook/\.github/workflows/ci\.yaml@' \
+    ghcr.io/steadforce/eso-keepass-webhook:X.Y.Z | jq -r '.payload | @base64d | fromjson | .predicate' > sbom.cdx.json
+  ```
+
+- **Asset of the GitHub release:** `eso-keepass-webhook-<version>.cdx.json`.
+- Scan it later for new vulnerabilities: `trivy sbom sbom.cdx.json`.
 
 ## License
 

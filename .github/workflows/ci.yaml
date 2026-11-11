@@ -5,6 +5,24 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Called by nightly-patch-release.yaml: builds and publishes the given version from the given commit.
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version without the v prefix (for example 1.2.3). Empty: the version of the pushed tag, if any."
+        type: string
+        required: false
+        default: ""
+      ref:
+        description: "Commit to build, empty for the commit of the triggering event"
+        type: string
+        required: false
+        default: ""
+      previous_tag:
+        description: "Tag the generated release notes start at, empty for GitHub's choice"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -16,6 +34,9 @@ concurrency:
 env:
   IMAGE: ghcr.io/${{ github.repository }}
   HELM_VERSION: v4.3.0
+  # Trivy version of all scan and SBOM steps, kept up to date by Renovate (customManagers in renovate.json).
+  # renovate: datasource=github-releases depName=aquasecurity/trivy
+  SCANNER_TRIVY_VERSION: v0.76.2
 
 jobs:
   test:
@@ -23,6 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@v10.2.0
         with:
@@ -38,6 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: azure/setup-helm@v5.0.1
         with:
@@ -57,11 +80,32 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
+      id-token: write # keyless signing with cosign (GitHub OIDC)
       attestations: write
     steps:
+      - name: Refuse to publish an outdated release plan
+        if: ${{ inputs.version != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          REF: ${{ inputs.ref || github.sha }}
+        run: |
+          # A re-run of an older nightly run reuses its plan; it must not overwrite a version that a later run released
+          # or publish commits that are no longer the head of main.
+          set -euo pipefail
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}" --jq "map(select(.ref == \"refs/tags/v${VERSION}\")) | length")
+          if [[ "$existing" != "0" ]]; then
+            echo "Tag v${VERSION} already exists, so this plan is outdated. Start a new run of the nightly workflow." >&2
+            exit 1
+          fi
+          main=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          if [[ "$main" != "$REF" ]]; then
+            echo "Planned commit $REF is not the head of main ($main) any more. Start a new run of the nightly workflow." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: docker/setup-buildx-action@v4.4.1
       - uses: docker/login-action@v4.6.0
@@ -76,12 +120,45 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.IMAGE }}
+          # `value=` is empty for tag pushes and branch builds, then the metadata comes from the ref.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ inputs.version != '' && format('v{0}', inputs.version) || '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version != '' && format('v{0}', inputs.version) || '' }}
             type=ref,event=branch
             type=ref,event=pr
             type=sha
+      - id: image
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: echo "ref=$(printf '%s\n' "$TAGS" | head -n 1)" >> "$GITHUB_OUTPUT"
+      # The image that is scanned is the image that is pushed and signed: it is built once and scanned before the push.
+      # The scan covers the linux/amd64 build. The other platform only differs in the architecture-specific wheels, which are
+      # pinned by hash in uv.lock to the same versions, and shares the base image digest.
+      - name: Build the image to scan
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.image.outputs.ref }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+      # Fails the build for HIGH and CRITICAL vulnerabilities that have a fixed version, so such an image is never pushed.
+      # Pull requests are only reported (exit code 0), otherwise the update that fixes the finding could not be merged.
+      # Accepted findings go into .trivyignore (with a comment and an expiry date), which Trivy reads by itself.
+      # The scan covers the operating system packages and the Python libraries in /app.
+      # Pinned to commit SHAs: in March 2026 most version tags of trivy-action were rewritten to malicious commits.
+      - name: Scan the image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          version: ${{ env.SCANNER_TRIVY_VERSION }}
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # The Dockerfile cross-resolves wheels on the host, so no QEMU is needed.
       - id: build
         uses: docker/build-push-action@v7.4.0
@@ -101,9 +178,57 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      # Keyless: the signature is bound to the identity of this workflow (GitHub OIDC) and recorded in the Rekor log.
+      # It signs the digest of the multi-arch index, so all tags and both platforms are covered. A called run is signed
+      # with the identity of this file as well (the called workflow), so one identity pattern verifies every image.
+      - name: Sign and verify the image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE_DIGEST: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$IMAGE_DIGEST"
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/ci\.yaml@" \
+            "$IMAGE_DIGEST" > /dev/null
+          echo "Signed and verified \`$IMAGE_DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+      # SBOM (CycloneDX) of the scanned linux/amd64 image: operating system packages and Python libraries.
+      - name: Generate the SBOM
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          version: ${{ env.SCANNER_TRIVY_VERSION }}
+          format: cyclonedx
+          output: sbom.cdx.json
+          exit-code: "0"
+      # Signed attestation on the image digest (keyless, like the image signature), verified in the same run.
+      - name: Attest and verify the SBOM
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE_DIGEST: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$IMAGE_DIGEST"
+          cosign verify-attestation --type cyclonedx \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/ci\.yaml@" \
+            "$IMAGE_DIGEST" > /dev/null
+          echo "SBOM attached to \`$IMAGE_DIGEST\` and verified" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the SBOM as a build artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom.cdx.json
 
   release-chart:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Tag pushes (manual releases) and calls of the nightly release workflow (inputs.version).
+    if: ${{ github.event_name != 'pull_request' && (inputs.version != '' || startsWith(github.ref, 'refs/tags/v')) }}
     needs: [chart, image]
     runs-on: ubuntu-latest
     permissions:
@@ -112,6 +237,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: azure/setup-helm@v5.0.1
         with:
@@ -119,26 +245,83 @@ jobs:
       - name: Package and push chart
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
           helm package charts/eso-keepass-webhook --version "$version" --app-version "$version"
           echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           helm push "eso-keepass-webhook-$version.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
 
   github-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [release-chart]
+    if: ${{ github.event_name != 'pull_request' && (inputs.version != '' || startsWith(github.ref, 'refs/tags/v')) }}
+    needs: [release-chart, image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Download the SBOM of the image
+        uses: actions/download-artifact@v8
+        with:
+          name: sbom
+      # A tag push (manual release) releases the pushed tag. A call of the nightly workflow creates the tag at the planned
+      # commit, with GITHUB_TOKEN, which does not start another workflow run.
       - name: Create release with generated notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ inputs.ref }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          prerelease=()
-          if [[ "$version" == *-* ]]; then prerelease=(--prerelease); fi  # e.g. v1.0.0-rc.1
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
-            "${prerelease[@]}" --notes "Image: \`${IMAGE}:${version}\`
+          set -euo pipefail
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          asset="eso-keepass-webhook-${version}.cdx.json"
+          mv sbom.cdx.json "$asset"
+          args=()
+          if [[ -n "$INPUT_VERSION" ]]; then
+            args+=(--target "$INPUT_REF" --title "v${version}")
+            if [[ -n "$PREVIOUS_TAG" ]]; then args+=(--notes-start-tag "$PREVIOUS_TAG"); fi
+          else
+            args+=(--verify-tag)
+          fi
+          if [[ "$version" == *-* ]]; then args+=(--prerelease); fi  # e.g. v1.0.0-rc.1
+          gh release create "v${version}" "$asset" --repo "$GITHUB_REPOSITORY" --generate-notes "${args[@]}" \
+            --notes "Image: \`${IMAGE}:${version}\`
           Chart: \`oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts/eso-keepass-webhook\` version \`${version}\`"
+
+  # Announces published and failed releases (tag pushes and nightly releases) in the Teams release channel.
+  # The steps skip themselves while the secret is empty. Called runs need `secrets: inherit` in the caller.
+  notify-release:
+    name: Notify Teams
+    needs: [test, chart, image, release-chart, github-release]
+    if: ${{ always() && github.event_name != 'pull_request' && (inputs.version != '' || startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      MS_TEAMS_RELEASE_WEBHOOK: ${{ secrets.STEADOPS_RELEASE_MS_TEAMS_WEBHOOK }}
+      RELEASE_TAG: ${{ inputs.version != '' && format('v{0}', inputs.version) || github.ref_name }}
+    steps:
+      - name: Notify MS Teams about the published release
+        if: ${{ needs.github-release.result == 'success' && env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
+        continue-on-error: true
+        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.3.0
+        with:
+          webhook-url: ${{ env.MS_TEAMS_RELEASE_WEBHOOK }}
+          status: success
+          title: "eso-keepass-webhook ${{ env.RELEASE_TAG }} published"
+          facts: |
+            Image=${{ env.IMAGE }}:${{ env.RELEASE_TAG }}
+            Release=${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.RELEASE_TAG }}
+      - name: Notify MS Teams about the failed release
+        if: ${{ needs.github-release.result != 'success' && env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
+        continue-on-error: true
+        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.3.0
+        with:
+          webhook-url: ${{ env.MS_TEAMS_RELEASE_WEBHOOK }}
+          status: failure
+          title: "eso-keepass-webhook ${{ env.RELEASE_TAG }} failed"
+          facts: |
+            Test=${{ needs.test.result }}
+            Chart tests=${{ needs.chart.result }}
+            Image=${{ needs.image.result }}
+            Chart=${{ needs.release-chart.result }}
+            Release=${{ needs.github-release.result }}
