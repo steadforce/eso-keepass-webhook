@@ -89,6 +89,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version }}
           REF: ${{ inputs.ref || github.sha }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
         run: |
           # A re-run of an older nightly run reuses its plan; it must not overwrite a version that a later run released
           # or publish commits that are no longer the head of main.
@@ -96,6 +97,13 @@ jobs:
           existing=$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${VERSION}" --jq "map(select(.ref == \"refs/tags/v${VERSION}\")) | length")
           if [[ "$existing" != "0" ]]; then
             echo "Tag v${VERSION} already exists, so this plan is outdated. Start a new run of the nightly workflow." >&2
+            exit 1
+          fi
+          # A release that was published after the plan was made (for example a manual minor release) makes the plan obsolete as well.
+          newest=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          if [[ -n "$PREVIOUS_TAG" && "$newest" != "$PREVIOUS_TAG" ]]; then
+            echo "The newest release is ${newest:-none}, but the plan was made from ${PREVIOUS_TAG}. Start a new run of the nightly workflow." >&2
             exit 1
           fi
           main=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
@@ -120,11 +128,12 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.IMAGE }}
-          # `value=` is empty for tag pushes and branch builds, then the metadata comes from the ref.
+          # `value=` is empty for tag pushes and branch builds, then the metadata comes from the ref. A called release run
+          # does not move the branch tag: `:main` belongs to the builds of pushes to main.
           tags: |
             type=semver,pattern={{version}},value=${{ inputs.version != '' && format('v{0}', inputs.version) || '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version != '' && format('v{0}', inputs.version) || '' }}
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ inputs.version == '' }}
             type=ref,event=pr
             type=sha
       - id: image
@@ -300,6 +309,8 @@ jobs:
       MS_TEAMS_RELEASE_WEBHOOK: ${{ secrets.STEADOPS_RELEASE_MS_TEAMS_WEBHOOK }}
       RELEASE_TAG: ${{ inputs.version != '' && format('v{0}', inputs.version) || github.ref_name }}
     steps:
+      - name: Name the image version
+        run: echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
       - name: Notify MS Teams about the published release
         if: ${{ needs.github-release.result == 'success' && env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
         continue-on-error: true
@@ -309,7 +320,7 @@ jobs:
           status: success
           title: "eso-keepass-webhook ${{ env.RELEASE_TAG }} published"
           facts: |
-            Image=${{ env.IMAGE }}:${{ env.RELEASE_TAG }}
+            Image=${{ env.IMAGE }}:${{ env.RELEASE_VERSION }}
             Release=${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.RELEASE_TAG }}
       - name: Notify MS Teams about the failed release
         if: ${{ needs.github-release.result != 'success' && env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
