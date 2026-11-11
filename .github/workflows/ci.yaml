@@ -289,6 +289,14 @@ jobs:
           mv sbom.cdx.json "$asset"
           args=()
           if [[ -n "$INPUT_VERSION" ]]; then
+            # `gh release create` reuses a tag that exists already, also one that points to another commit (for example a tag
+            # that was pushed by hand while this run was building). Never release such a tag: the release would not match
+            # the image and chart that were built from INPUT_REF.
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}" > /dev/null 2>&1; then
+              echo "Tag v${version} exists already, so another release of this version was published while this run was building." >&2
+              echo "The image and chart of this run may have been overwritten; check them, then start a new nightly run." >&2
+              exit 1
+            fi
             args+=(--target "$INPUT_REF" --title "v${version}")
             if [[ -n "$PREVIOUS_TAG" ]]; then args+=(--notes-start-tag "$PREVIOUS_TAG"); fi
           else
@@ -298,6 +306,14 @@ jobs:
           gh release create "v${version}" "$asset" --repo "$GITHUB_REPOSITORY" --generate-notes "${args[@]}" \
             --notes "Image: \`${IMAGE}:${version}\`
           Chart: \`oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts/eso-keepass-webhook\` version \`${version}\`"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            # The tag was created by the command above; it has to point to the commit that was built.
+            tagged=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}" --jq .object.sha)
+            if [[ "$tagged" != "$INPUT_REF" ]]; then
+              echo "Tag v${version} points to ${tagged}, not to the built commit ${INPUT_REF}" >&2
+              exit 1
+            fi
+          fi
 
   # Announces published and failed releases (tag pushes and nightly releases) in the Teams release channel.
   # The steps skip themselves while the secret is empty. Called runs need `secrets: inherit` in the caller.
