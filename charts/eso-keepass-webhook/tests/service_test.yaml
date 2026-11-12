@@ -1,0 +1,47 @@
+suite: webhook service
+templates:
+- templates/service.yaml
+release:
+  name: eso-keepass-webhook
+  namespace: keepass
+tests:
+- it: exposes the default port and forwards it to the http port of the pods
+  asserts:
+  - isKind:
+      of: Service
+  - equal:
+      path: spec.ports
+      value:
+      - name: http
+        port: 8080
+        targetPort: http
+
+- it: exposes the configured port
+  set:
+    service.port: 9090
+  asserts:
+  - equal:
+      path: spec.ports[?(@.name == "http")].port
+      value: 9090
+  - equal:
+      path: spec.ports[?(@.name == "http")].targetPort
+      value: http
+
+- it: selects the pods of the release
+  asserts:
+  - equal:
+      path: spec.selector
+      value:
+        app.kubernetes.io/name: eso-keepass-webhook
+        app.kubernetes.io/instance: eso-keepass-webhook
+
+- it: is named after the release and the chart
+  release:
+    name: keepass
+  asserts:
+  - equal:
+      path: metadata.name
+      value: keepass-eso-keepass-webhook
+  - equal:
+      path: spec.selector["app.kubernetes.io/instance"]
+      value: keepass

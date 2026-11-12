@@ -1,0 +1,214 @@
+suite: webhook deployment
+templates:
+- templates/deployment.yaml
+release:
+  name: eso-keepass-webhook
+  namespace: keepass
+tests:
+# ---- replicas and image
+- it: runs one replica by default
+  asserts:
+  - equal:
+      path: spec.replicas
+      value: 1
+
+- it: runs the configured number of replicas
+  set:
+    replicaCount: 3
+  asserts:
+  - equal:
+      path: spec.replicas
+      value: 3
+
+- it: runs the image of the chart's app version by default
+  chart:
+    appVersion: 9.9.9
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].image
+      value: ghcr.io/steadforce/eso-keepass-webhook:9.9.9
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].imagePullPolicy
+      value: IfNotPresent
+
+- it: uses the configured image repository, tag and pull policy
+  set:
+    image.repository: registry.example.com/team/keepass-webhook
+    image.tag: 1.2.3
+    image.pullPolicy: Always
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].image
+      value: registry.example.com/team/keepass-webhook:1.2.3
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].imagePullPolicy
+      value: Always
+
+- it: adds no pull secrets by default
+  asserts:
+  - notExists:
+      path: spec.template.spec.imagePullSecrets
+
+- it: pulls the image with the configured secrets
+  set:
+    imagePullSecrets:
+    - name: registry-credentials
+  asserts:
+  - equal:
+      path: spec.template.spec.imagePullSecrets
+      value:
+      - name: registry-credentials
+
+# ---- service port
+- it: listens on the default service port
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].env
+      content: {name: PORT, value: "8080"}
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].ports[?(@.name == "http")].containerPort
+      value: 8080
+
+- it: listens on the configured service port
+  set:
+    service.port: 9090
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].env
+      content: {name: PORT, value: "9090"}
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].ports[?(@.name == "http")].containerPort
+      value: 9090
+
+# ---- auth token
+- it: mounts the generated auth token Secret by default
+  asserts:
+  - contains:
+      path: &podVolumesPath spec.template.spec.volumes
+      content: {name: auth, secret: {secretName: eso-keepass-webhook-auth}}
+
+- it: mounts the existing auth token Secret
+  set:
+    auth.existingSecret: my-token
+  asserts:
+  - contains:
+      path: *podVolumesPath
+      content: {name: auth, secret: {secretName: my-token}}
+
+# ---- resources
+- it: sets cpu and memory requests and a memory limit by default
+  asserts:
+  - exists:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].resources.requests.cpu
+  - exists:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].resources.requests.memory
+  - exists:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].resources.limits.memory
+
+- it: uses the configured resources
+  set:
+    resources:
+      requests:
+        cpu: 123m
+        memory: 45Mi
+      limits:
+        memory: 678Mi
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[?(@.name == "eso-keepass-webhook")].resources
+      value:
+        requests:
+          cpu: 123m
+          memory: 45Mi
+        limits:
+          memory: 678Mi
+
+# ---- scheduling
+- it: adds no scheduling constraints by default
+  asserts:
+  - notExists:
+      path: spec.template.spec.nodeSelector
+  - notExists:
+      path: spec.template.spec.tolerations
+  - notExists:
+      path: spec.template.spec.affinity
+
+- it: schedules the pod with the configured node selector, tolerations and affinity
+  set:
+    nodeSelector:
+      kubernetes.io/os: linux
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: node.kubernetes.io/worker
+              operator: Exists
+  asserts:
+  - equal:
+      path: spec.template.spec.nodeSelector
+      value:
+        kubernetes.io/os: linux
+  - equal:
+      path: spec.template.spec.tolerations
+      value:
+      - key: dedicated
+        operator: Equal
+        value: platform
+        effect: NoSchedule
+  - exists:
+      path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[?(@.key == "node.kubernetes.io/worker")]
+
+# ---- annotations and labels
+- it: adds no pod annotations by default
+  asserts:
+  - notExists:
+      path: spec.template.metadata.annotations
+
+- it: adds the configured pod annotations
+  set:
+    podAnnotations:
+      example.com/note: hello
+  asserts:
+  - equal:
+      path: spec.template.metadata.annotations["example.com/note"]
+      value: hello
+
+- it: selects and labels the pods with the name and the instance of the release
+  asserts:
+  - equal:
+      path: spec.selector.matchLabels
+      value:
+        app.kubernetes.io/name: eso-keepass-webhook
+        app.kubernetes.io/instance: eso-keepass-webhook
+  - equal:
+      path: spec.template.metadata.labels
+      value:
+        app.kubernetes.io/name: eso-keepass-webhook
+        app.kubernetes.io/instance: eso-keepass-webhook
+
+# ---- names
+- it: uses the release name as the name when it contains the chart name
+  asserts:
+  - equal:
+      path: metadata.name
+      value: eso-keepass-webhook
+
+- it: names the deployment after the release and the chart otherwise
+  release:
+    name: keepass
+  asserts:
+  - equal:
+      path: metadata.name
+      value: keepass-eso-keepass-webhook
+  - equal:
+      path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+      value: keepass
+  - contains:
+      path: *podVolumesPath
+      content: {name: auth, secret: {secretName: keepass-eso-keepass-webhook-auth}}
