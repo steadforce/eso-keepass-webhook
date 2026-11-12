@@ -153,6 +153,17 @@ requests carry the label `dependencies`. Label a pull request `skip-changelog` t
   dependency release contains them if they were merged since the last release. It does nothing as long as there is no
   stable tag (prereleases are ignored).
 
+Release tags have to be `vX.Y.Z` (or `vX.Y.Z-rc.1` for a prerelease, valid SemVer without build metadata); a pushed tag of another form
+such as `v1` or `v1.2.3-rc..1` fails in the first job and publishes nothing. So does a stable tag that is older than the newest
+release (for example a re-run of an older tag run), because it would overwrite the shared image tags `X.Y` and `latest`.
+
+Safeguards against two releases of the same version or an older release overwriting a newer one (the image tags `X.Y` and `latest` are
+shared by several versions): all release runs, tag pushes and nightly releases alike, share one lock and never publish at the same time.
+A nightly release refuses to publish when a tag of its version exists or when a newer stable release appeared after the plan was made.
+This is checked at the start, again right before the image is pushed, and again before the release is created. The release is only
+created when no tag of that version exists, and afterwards its tag has to point to the built commit. A nightly release does not move
+the `main` image tag.
+
 Renovate merges patch and digest updates of the Python dependencies and the `Dockerfile`, and all GitHub Actions updates,
 three days after their release once the checks pass. Minor and major updates of dependencies stay manual.
 
