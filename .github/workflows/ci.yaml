@@ -225,6 +225,21 @@ jobs:
             echo "Planned commit $REF is not the head of main ($main) any more. Nothing was pushed." >&2
             exit 1
           fi
+      # Re-running only the failed jobs of an older tag run keeps the result of the check in the test job. Checked again right
+      # before the push, so that an older stable release never overwrites the shared image tags `X.Y` and `latest` of a newer one.
+      - name: Refuse to push an older stable release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          refs=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq ".[].ref")
+          newest=$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -1 || true)
+          if [[ -n "$newest" && "$newest" != "$TAG" ]]; then
+            echo "A newer release exists: $newest. $TAG is older, so it would overwrite the shared image tags. Nothing was pushed." >&2
+            exit 1
+          fi
       # The Dockerfile cross-resolves wheels on the host, so no QEMU is needed.
       - id: build
         uses: docker/build-push-action@v7.4.0
