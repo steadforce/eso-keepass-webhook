@@ -6,7 +6,7 @@ release:
   namespace: keepass
 tests:
 - it: has ESO generate the token once
-  capabilities:
+  capabilities: &authTokenCapabilities
     apiVersions:
     - external-secrets.io/v1/ExternalSecret
     - generators.external-secrets.io/v1alpha1/Password
@@ -48,10 +48,7 @@ tests:
       count: 0
 
 - it: is omitted with an existing auth Secret
-  capabilities:
-    apiVersions:
-    - external-secrets.io/v1/ExternalSecret
-    - generators.external-secrets.io/v1alpha1/Password
+  capabilities: *authTokenCapabilities
   set:
     auth.existingSecret: my-token
   asserts:
@@ -62,10 +59,7 @@ tests:
   release:
     name: keepass
     namespace: keepass
-  capabilities:
-    apiVersions:
-    - external-secrets.io/v1/ExternalSecret
-    - generators.external-secrets.io/v1alpha1/Password
+  capabilities: *authTokenCapabilities
   asserts:
   - equal:
       path: metadata.name

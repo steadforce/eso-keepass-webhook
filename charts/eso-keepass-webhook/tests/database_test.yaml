@@ -8,19 +8,19 @@ tests:
 - it: mounts one Secret with database and password by default
   asserts:
   - contains:
-      path: spec.template.spec.volumes
+      path: &podVolumesPath spec.template.spec.volumes
       content: {name: database, secret: {secretName: keepass-database}}
   - contains:
-      path: spec.template.spec.volumes
+      path: *podVolumesPath
       content: {name: credentials, secret: {secretName: keepass-database}}
   - contains:
-      path: spec.template.spec.containers[0].env
+      path: &containerEnvPath spec.template.spec.containers[0].env
       content: {name: KDBX_PATH, value: /var/run/keepass/database/database.kdbx}
   - contains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_PASSWORD_FILE, value: /var/run/keepass/credentials/password}
   - notContains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_KEYFILE}
       any: true
 
@@ -29,7 +29,7 @@ tests:
     database.reloadInterval: 30
   asserts:
   - contains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_RELOAD_INTERVAL, value: "30"}
 - it: reads the database and the password from the configured keys
   set:
@@ -37,10 +37,10 @@ tests:
     credentials.passwordKey: master-password
   asserts:
   - contains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_PATH, value: /var/run/keepass/database/secrets.kdbx}
   - contains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_PASSWORD_FILE, value: /var/run/keepass/credentials/master-password}
 
 - it: takes the credentials from their own Secret
@@ -49,13 +49,13 @@ tests:
     credentials.keyfileKey: keyfile
   asserts:
   - contains:
-      path: spec.template.spec.volumes
+      path: *podVolumesPath
       content: {name: database, secret: {secretName: keepass-database}}
   - contains:
-      path: spec.template.spec.volumes
+      path: *podVolumesPath
       content: {name: credentials, secret: {secretName: keepass-credentials}}
   - contains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_KEYFILE, value: /var/run/keepass/credentials/keyfile}
 
 - it: supports a database that only uses a key file
@@ -64,7 +64,7 @@ tests:
     credentials.keyfileKey: keyfile
   asserts:
   - notContains:
-      path: spec.template.spec.containers[0].env
+      path: *containerEnvPath
       content: {name: KDBX_PASSWORD_FILE}
       any: true
 

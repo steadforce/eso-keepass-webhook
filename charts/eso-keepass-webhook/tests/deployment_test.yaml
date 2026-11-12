@@ -84,7 +84,7 @@ tests:
 - it: mounts the generated auth token Secret by default
   asserts:
   - contains:
-      path: spec.template.spec.volumes
+      path: &podVolumesPath spec.template.spec.volumes
       content: {name: auth, secret: {secretName: eso-keepass-webhook-auth}}
 
 - it: mounts the existing auth token Secret
@@ -92,7 +92,7 @@ tests:
     auth.existingSecret: my-token
   asserts:
   - contains:
-      path: spec.template.spec.volumes
+      path: *podVolumesPath
       content: {name: auth, secret: {secretName: my-token}}
 
 # ---- resources
@@ -210,5 +210,5 @@ tests:
       path: spec.selector.matchLabels["app.kubernetes.io/instance"]
       value: keepass
   - contains:
-      path: spec.template.spec.volumes
+      path: *podVolumesPath
       content: {name: auth, secret: {secretName: keepass-eso-keepass-webhook-auth}}
