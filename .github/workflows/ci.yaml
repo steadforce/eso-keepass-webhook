@@ -84,6 +84,7 @@ jobs:
       packages: write
       id-token: write # keyless signing with cosign (GitHub OIDC)
       attestations: write
+      artifact-metadata: write # storage record of the build provenance attestation, otherwise a warning is logged
     steps:
       - name: Refuse to publish an outdated release plan
         if: ${{ inputs.version != '' }}
