@@ -144,7 +144,8 @@ pull requests grouped by label as configured in [`.github/release.yaml`](.github
 requests carry the label `dependencies`. Label a pull request `skip-changelog` to leave it out.
 
 - **Manual release (minor, major, first stable release):** push a tag `vX.Y.Z` on `main`. Tags with a hyphen
-  (`v1.0.0-rc.1`) are published as prereleases.
+  (`v1.0.0-rc.1`) are published as prereleases. A release that was published by hand in the GitHub UI works too (it creates
+  the tag): CI keeps its text and only attaches the SBOM.
 - **Nightly patch release:** [`nightly-patch-release.yaml`](.github/workflows/nightly-patch-release.yaml) runs every
   night (02:17 UTC) and can be started by hand (`dry_run` is on by default and only reports in the run summary what it
   would do). If `uv.lock`, `.python-version` or the `Dockerfile` changed since the newest stable tag, it releases the next patch
