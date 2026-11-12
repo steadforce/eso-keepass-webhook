@@ -31,6 +31,18 @@ tests:
   - contains:
       path: spec.template.spec.containers[0].env
       content: {name: KDBX_RELOAD_INTERVAL, value: "30"}
+- it: reads the database and the password from the configured keys
+  set:
+    database.databaseKey: secrets.kdbx
+    credentials.passwordKey: master-password
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_PATH, value: /var/run/keepass/database/secrets.kdbx}
+  - contains:
+      path: spec.template.spec.containers[0].env
+      content: {name: KDBX_PASSWORD_FILE, value: /var/run/keepass/credentials/master-password}
+
 - it: takes the credentials from their own Secret
   set:
     credentials.secretName: keepass-credentials

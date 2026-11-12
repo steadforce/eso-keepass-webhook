@@ -59,3 +59,16 @@ tests:
   asserts:
   - hasDocuments:
       count: 0
+
+- it: selects the pods of the release and is named after it
+  release:
+    name: keepass
+  asserts:
+  - equal:
+      path: metadata.name
+      value: keepass-eso-keepass-webhook
+  - equal:
+      path: spec.podSelector.matchLabels
+      value:
+        app.kubernetes.io/name: eso-keepass-webhook
+        app.kubernetes.io/instance: keepass

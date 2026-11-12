@@ -57,3 +57,29 @@ tests:
   asserts:
   - hasDocuments:
       count: 0
+
+- it: names the generator, the ExternalSecret and the target Secret after the release
+  release:
+    name: keepass
+    namespace: keepass
+  capabilities:
+    apiVersions:
+    - external-secrets.io/v1/ExternalSecret
+    - generators.external-secrets.io/v1alpha1/Password
+  asserts:
+  - equal:
+      path: metadata.name
+      value: keepass-eso-keepass-webhook-auth
+    documentIndex: 0
+  - equal:
+      path: metadata.name
+      value: keepass-eso-keepass-webhook-auth
+    documentIndex: 1
+  - equal:
+      path: spec.target.name
+      value: keepass-eso-keepass-webhook-auth
+    documentIndex: 1
+  - equal:
+      path: spec.dataFrom[0].sourceRef.generatorRef.name
+      value: keepass-eso-keepass-webhook-auth
+    documentIndex: 1
