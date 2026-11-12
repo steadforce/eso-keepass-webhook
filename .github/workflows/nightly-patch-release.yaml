@@ -110,6 +110,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     uses: ./.github/workflows/ci.yaml
     # ci.yaml posts the result of the release to the Teams release channel and needs the secret for that.
     secrets: inherit

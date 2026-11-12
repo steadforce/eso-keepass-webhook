@@ -84,6 +84,7 @@ jobs:
       packages: write
       id-token: write # keyless signing with cosign (GitHub OIDC)
       attestations: write
+      artifact-metadata: write # storage record of the build provenance attestation, otherwise a warning is logged
     steps:
       - name: Refuse to publish an outdated release plan
         if: ${{ inputs.version != '' }}
@@ -287,6 +288,13 @@ jobs:
           version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
           asset="eso-keepass-webhook-${version}.cdx.json"
           mv sbom.cdx.json "$asset"
+          # A release that was published by hand in the UI (which creates the tag and starts this run) is kept as it is,
+          # with its own text: only the SBOM is attached.
+          if [[ -z "$INPUT_VERSION" ]] && gh release view "v${version}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release v${version} exists already, attaching the SBOM only"
+            gh release upload "v${version}" "$asset" --repo "$GITHUB_REPOSITORY" --clobber
+            exit 0
+          fi
           args=()
           if [[ -n "$INPUT_VERSION" ]]; then
             # `gh release create` reuses a tag that exists already, also one that points to another commit (for example a tag
