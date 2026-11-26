@@ -214,7 +214,7 @@ Every pushed image gets a CycloneDX SBOM (JSON) of its operating system packages
 
 ## License
 
-[GNU General Public License, version 3](LICENSE) (`GPL-3.0-only`).
+Copyright (C) 2026 Steadforce GmbH. [GNU General Public License, version 3](LICENSE) (`GPL-3.0-only`).
 
 The webhook uses [pykeepass](https://github.com/libkeepass/pykeepass) to read KeePass databases, which is licensed under the GPL-3.0, so the
 webhook, its container image and its Helm chart are licensed under the GPL-3.0 as well. Up to and including `v0.1.1` the repository declared
