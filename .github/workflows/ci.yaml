@@ -90,7 +90,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - run: helm lint --strict charts/eso-keepass-webhook
@@ -320,7 +320,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Package and push chart
