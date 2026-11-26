@@ -3,7 +3,7 @@ name = "eso-keepass-webhook"
 version = "0.1.0"
 description = "Serve KeePass entries to the External Secrets Operator webhook provider"
 readme = "README.md"
-license = "Apache-2.0"
+license = "GPL-3.0-only"
 requires-python = ">=3.13"
 dependencies = [
     "pykeepass>=4.1",
