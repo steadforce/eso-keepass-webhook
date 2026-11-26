@@ -4,6 +4,7 @@
 [![Nightly patch release](https://github.com/steadforce/eso-keepass-webhook/actions/workflows/nightly-patch-release.yaml/badge.svg?branch=main)](https://github.com/steadforce/eso-keepass-webhook/actions/workflows/nightly-patch-release.yaml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](pyproject.toml)
+[![Release](https://img.shields.io/github/v/release/steadforce/eso-keepass-webhook)](https://github.com/steadforce/eso-keepass-webhook/releases)
 
 Serves entries from a [KeePass](https://keepass.info/) database to the
 [External Secrets Operator](https://external-secrets.io/) (ESO) through its
