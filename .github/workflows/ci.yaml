@@ -93,9 +93,11 @@ jobs:
       - uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
-      # The chart is published on its own, so the package has to carry the license text (GPL-3.0 section 4). Helm packages every file of the chart directory.
-      - name: Check that the chart carries the license of the project
-        run: cmp LICENSE charts/eso-keepass-webhook/LICENSE
+      # The chart is published on its own, so the package has to carry the license text and the copyright notice (GPL-3.0 section 4). Helm packages every file of the chart directory.
+      - name: Check that the chart carries the license and the notice of the project
+        run: |
+          cmp LICENSE charts/eso-keepass-webhook/LICENSE
+          cmp NOTICE charts/eso-keepass-webhook/NOTICE
       - run: helm lint --strict charts/eso-keepass-webhook
       - name: helm unittest
         run: |
