@@ -27,6 +27,9 @@ RUN python -m compileall -q --invalidation-mode unchecked-hash /app
 
 FROM gcr.io/distroless/python3-debian13:nonroot@sha256:72de1dda9d4c52c370e2ef2d93c28e3e1a8193c92058b7dfa42bace38a83d114
 COPY --from=build /app /app
+# The license text and the copyright notice travel with the image (GPL-3.0)
+COPY LICENSE /licenses/LICENSE
+COPY NOTICE /licenses/NOTICE
 ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
 EXPOSE 8080
 ENTRYPOINT ["python3", "-m", "eso_keepass_webhook"]

@@ -90,9 +90,14 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
+      # The chart is published on its own, so the package has to carry the license text and the copyright notice (GPL-3.0 section 4). Helm packages every file of the chart directory.
+      - name: Check that the chart carries the license and the notice of the project
+        run: |
+          cmp LICENSE charts/eso-keepass-webhook/LICENSE
+          cmp NOTICE charts/eso-keepass-webhook/NOTICE
       - run: helm lint --strict charts/eso-keepass-webhook
       - name: helm unittest
         run: |
@@ -146,7 +151,7 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: docker/setup-buildx-action@v4.4.1
-      - uses: docker/login-action@v4.6.0
+      - uses: docker/login-action@v4.8.0
         if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
@@ -320,7 +325,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@v5.1.0
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Package and push chart
@@ -466,7 +471,7 @@ jobs:
       - name: Notify MS Teams about the published release
         if: ${{ needs.github-release.result == 'success' && env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
         continue-on-error: true
-        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.3.0
+        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.5.2
         with:
           webhook-url: ${{ env.MS_TEAMS_RELEASE_WEBHOOK }}
           status: success
@@ -477,7 +482,7 @@ jobs:
       - name: Notify MS Teams about the failed release
         if: ${{ needs.github-release.result != 'success' && env.MS_TEAMS_RELEASE_WEBHOOK != '' }}
         continue-on-error: true
-        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.3.0
+        uses: steadforce/steadops-workflows/.github/actions/teams-notification@v4.5.2
         with:
           webhook-url: ${{ env.MS_TEAMS_RELEASE_WEBHOOK }}
           status: failure
