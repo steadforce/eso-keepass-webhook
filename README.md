@@ -220,6 +220,18 @@ The webhook uses [pykeepass](https://github.com/libkeepass/pykeepass) to read Ke
 webhook, its container image and its Helm chart are licensed under the GPL-3.0 as well. Up to and including `v0.1.1` the repository declared
 Apache-2.0.
 
+### Third-party components
+
+The container image also contains software of other projects under their own licenses:
+
+- **Python packages** in `/app`: each keeps its license file in its `*.dist-info` folder. They are permissive (MIT, BSD, Apache-2.0, PSF)
+  except `pykeepass`, which is GPL-3.0.
+- **Debian packages** of the [distroless Python base image](https://github.com/GoogleContainerTools/distroless), pinned by digest in the
+  `Dockerfile`: the license texts are in `/usr/share/doc/<package>/copyright` and the installed packages are listed in
+  `/var/lib/dpkg/status.d/`. Some are licensed under the GPL or LGPL (for example `libc6` and `libreadline8t64`). Their source code is
+  available from Debian at <https://sources.debian.org/> and <https://snapshot.debian.org/>.
+- **SBOM:** every release has a CycloneDX bill of materials of the image attached (`eso-keepass-webhook-<version>.cdx.json`).
+
 ## Contributors
 
 Alfred Schmid and Peter Sammer.
