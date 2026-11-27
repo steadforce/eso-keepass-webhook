@@ -1,0 +1,10 @@
+version = 1
+SPDX-PackageName = "eso-keepass-webhook"
+SPDX-PackageSupplier = "Steadforce GmbH"
+
+# One declaration for the whole repository, so that no source file needs a license header.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Steadforce GmbH"
+SPDX-License-Identifier = "GPL-3.0-only"

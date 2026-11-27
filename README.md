@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/steadforce/eso-keepass-webhook/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/steadforce/eso-keepass-webhook/actions/workflows/ci.yaml)
 [![Nightly patch release](https://github.com/steadforce/eso-keepass-webhook/actions/workflows/nightly-patch-release.yaml/badge.svg?branch=main)](https://github.com/steadforce/eso-keepass-webhook/actions/workflows/nightly-patch-release.yaml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](pyproject.toml)
 
 Serves entries from a [KeePass](https://keepass.info/) database to the
@@ -214,4 +214,24 @@ Every pushed image gets a CycloneDX SBOM (JSON) of its operating system packages
 
 ## License
 
-[Apache 2.0](LICENSE)
+Copyright (C) 2026 Steadforce GmbH. [GNU General Public License, version 3](LICENSE) (`GPL-3.0-only`).
+
+The webhook uses [pykeepass](https://github.com/libkeepass/pykeepass) to read KeePass databases, which is licensed under the GPL-3.0, so the
+webhook, its container image and its Helm chart are licensed under the GPL-3.0 as well. Up to and including `v0.1.2` the repository declared
+Apache-2.0.
+
+### Third-party components
+
+The container image also contains software of other projects under their own licenses:
+
+- **Python packages** in `/app`: each keeps its license file in its `*.dist-info` folder. They are permissive (MIT, BSD, Apache-2.0, PSF)
+  except `pykeepass`, which is GPL-3.0.
+- **Debian packages** of the [distroless Python base image](https://github.com/GoogleContainerTools/distroless), pinned by digest in the
+  `Dockerfile`: the license texts are in `/usr/share/doc/<package>/copyright` and the installed packages are listed in
+  `/var/lib/dpkg/status.d/`. Some are licensed under the GPL or LGPL (for example `libc6` and `libreadline8t64`). Their source code is
+  available from Debian at <https://sources.debian.org/> and <https://snapshot.debian.org/>.
+- **SBOM:** every release has a CycloneDX bill of materials of the image attached (`eso-keepass-webhook-<version>.cdx.json`).
+
+## Contributors
+
+Alfred Schmid and Peter Sammer.

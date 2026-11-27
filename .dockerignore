@@ -1,5 +1,7 @@
 *
 !pyproject.toml
 !uv.lock
+!LICENSE
+!NOTICE
 !src/
 **/__pycache__
