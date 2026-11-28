@@ -7,7 +7,7 @@ FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1
 # Runs on the build host for every target platform: uv downloads the target's wheels
 # directly, so multi-arch builds need no emulation. Keep the Python minor version in
 # sync with the runtime image.
-FROM --platform=$BUILDPLATFORM python:3.13-slim-trixie@sha256:7249d5587b78209a006dc4a3b5340678f84ea729239193aa559962cd8c1fce50 AS build
+FROM --platform=$BUILDPLATFORM python:3.15-slim-trixie@sha256:08a4c22c92b79ec821a7ad49768480039ee5b7accac3955228e75366e30abc8e AS build
 COPY --from=uv /uv /usr/local/bin/uv
 
 ARG TARGETARCH
